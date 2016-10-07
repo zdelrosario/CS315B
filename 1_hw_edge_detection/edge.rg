@@ -121,7 +121,7 @@ do
                      r_image.bounds)
 end
 
---
+p--
 -- TODO: Implement task 'sobelX'
 --
 -- The 'sobelX' task finds x component of the gradient vector at each pixel.
@@ -139,13 +139,15 @@ do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
     -- TODO: Fill the body of this loop
-    r_interior[e].gradient.x =
-	-1.0 * r_image[e+{-1,-1}].smooth +
-	-2.0 * r_image[e+{-1,+0}].smooth +
-	-1.0 * r_image[e+{-1,+1}].smooth +
-	 1.0 * r_image[e+{+1,-1}].smooth +
-	 2.0 * r_image[e+{+1,+0}].smooth +
-         1.0 * r_image[e+{+1,+1}].smooth
+     var grad_x : double = 0
+     grad_x +=
+       (-1.0) * r_image[e+{-1,-1}].smooth +
+       (-2.0) * r_image[e+{-1,+0}].smooth +
+       (-1.0) * r_image[e+{-1,+1}].smooth +
+        (1.0) * r_image[e+{+1,-1}].smooth +
+        (2.0) * r_image[e+{+1,+0}].smooth +
+        (1.0) * r_image[e+{+1,+1}].smooth
+       r_interior[e].gradient.x = grad_x
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Sobel operator on x-axis took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
