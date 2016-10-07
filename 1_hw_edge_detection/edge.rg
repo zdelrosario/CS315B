@@ -85,6 +85,7 @@ do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
     var smooth : double = 15 * r_image[e].original
+    -- Why does polarity traipse over -2 at all?
     for polarity = 1, -2, -2 do
       smooth +=
         12.0 * r_image[e + {1 * polarity, 0 * polarity}].original +
@@ -108,6 +109,7 @@ do
   c.printf("Gaussian smoothing took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
 end
 
+-- Save smoothed image to external file
 task saveSmooth(r_image : region(ispace(int2d), Pixel),
                 filename : rawstring)
 where
@@ -131,13 +133,19 @@ end
 --
 task sobelX(r_image    : region(ispace(int2d), Pixel),
             r_interior : region(ispace(int2d), Pixel))
--- TODO: Provide necessary privileges for this task
---where
---  reads(...), writes(...)
---do
+where
+  reads(r_image.smooth), writes(r_interior.gradient.x)
+do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
     -- TODO: Fill the body of this loop
+    r_interior[e].gradient.x =
+	-1.0 * r_image[e+{-1,-1}].smooth +
+	-2.0 * r_image[e+{-1,+0}].smooth +
+	-1.0 * r_image[e+{-1,+1}].smooth +
+	 1.0 * r_image[e+{+1,-1}].smooth +
+	 2.0 * r_image[e+{+1,+0}].smooth +
+         1.0 * r_image[e+{+1,+1}].smooth
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Sobel operator on x-axis took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
@@ -155,18 +163,25 @@ end
 --
 task sobelY(r_image    : region(ispace(int2d), Pixel),
             r_interior : region(ispace(int2d), Pixel))
--- TODO: Provide necessary privileges for this task
---where
---  reads(...), writes(...)
---do
+where
+  reads(r_image.smooth), writes(r_interior.gradient.y)
+do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
-    -- TODO: Fill the body of this loop
+     -- TODO: Fill the body of this loop
+     r_interior[e].gradient.y =
+	-1.0 * r_image[e+{-1,-1}].smooth +
+	-2.0 * r_image[e+{+0,-1}].smooth +
+	-1.0 * r_image[e+{+1,-1}].smooth +
+	 1.0 * r_image[e+{-1,+1}].smooth +
+	 2.0 * r_image[e+{+0,+1}].smooth +
+         1.0 * r_image[e+{+1,+1}].smooth
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Sobel operator on y-axis took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
 end
 
+-- Thresholds gradient magnitude to find edges
 task edgeFromGradient(r_image : region(ispace(int2d), Pixel),
                       threshold : double)
 where
