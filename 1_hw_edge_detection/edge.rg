@@ -132,12 +132,20 @@ end
 task sobelX(r_image    : region(ispace(int2d), Pixel),
             r_interior : region(ispace(int2d), Pixel))
 -- TODO: Provide necessary privileges for this task
---where
---  reads(...), writes(...)
---do
+where
+  reads(r_image.smooth), writes(r_interior.gradient.x)
+do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
-    -- TODO: Fill the body of this loop
+     var grad_x : double = 0
+     grad_x +=
+	-1. * r_image[e + {-1,-1}].smooth +
+	-2. * r_image[e + { 0,-1}].smooth +
+	-1. * r_image[e + { 1,-1}].smooth +
+	 1. * r_image[e + {-1, 1}].smooth +
+	 2. * r_image[e + { 0, 1}].smooth +
+	 1. * r_image[e + { 1, 1}].smooth
+     r_interior[e].gradient.x = grad_x
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Sobel operator on x-axis took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
@@ -156,12 +164,20 @@ end
 task sobelY(r_image    : region(ispace(int2d), Pixel),
             r_interior : region(ispace(int2d), Pixel))
 -- TODO: Provide necessary privileges for this task
---where
---  reads(...), writes(...)
---do
+where
+  reads(r_image.smooth), writes(r_interior.gradient.y)
+do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
-    -- TODO: Fill the body of this loop
+     var grad_y : double = 0
+     grad_y +=
+	-1. * r_image[e + {-1,-1}].smooth +
+	-2. * r_image[e + {-1, 0}].smooth +
+	-1. * r_image[e + {-1, 1}].smooth +
+	 1. * r_image[e + { 1,-1}].smooth +
+	 2. * r_image[e + { 1, 0}].smooth +
+	 1. * r_image[e + { 1, 1}].smooth
+     r_interior[e].gradient.y = grad_y
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Sobel operator on y-axis took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
@@ -210,13 +226,42 @@ end
 --
 task suppressNonmax(r_image    : region(ispace(int2d), Pixel),
                     r_interior : region(ispace(int2d), Pixel))
--- TODO: Provide necessary privileges for this task
---where
---  reads(...), writes(...)
---do
+where
+  reads(r_image.gradient),
+  writes(r_interior.local_maximum)
+do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
-    -- TODO: Fill the body of this loop
+     -- Compute rounded angle
+     var angle : int = 0
+     angle = cmath.atan(r_image[e].gradient.y/r_image[e].gradient.x)*180./PI
+     angle = cmath.floor(angle/45) % 4
+     --
+     if angle == 0 then
+       -- Case 0
+       if r_image[e].gradient:norm() < r_image[e+{0, 1}].gradient:norm() or
+          r_image[e].gradient:norm() < r_image[e+{0,-1}].gradient:norm() then
+         e.local_maximum = false
+       end
+     elseif angle == 1 then
+       -- Case 1
+       if r_image[e].gradient:norm() < r_image[e+{ 1, 1}].gradient:norm() or
+          r_image[e].gradient:norm() < r_image[e+{-1,-1}].gradient:norm() then
+         e.local_maximum = false
+       end
+     elseif angle == 2 then
+       -- Case 2
+       if r_image[e].gradient:norm() < r_image[e+{ 1,0}].gradient:norm() or
+          r_image[e].gradient:norm() < r_image[e+{-1,0}].gradient:norm() then
+         e.local_maximum = false
+       end
+     elseif angle == 3 then
+       -- Case 3
+       if r_image[e].gradient:norm() < r_image[e+{ 1,-1}].gradient:norm() or
+          r_image[e].gradient:norm() < r_image[e+{-1, 1}].gradient:norm() then
+         e.local_maximum = false
+       end
+     end
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Non-maximum suppression took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
