@@ -83,19 +83,6 @@ do
   return 1
 end
 
---
--- The 'smooth' task implements Gaussian smoothing, which is a convolution
--- between the image and the following 5x5 filter:
---
---        |  2  4  5  4  2 |
---   1    |  4  9 12  9  4 |
---  --- * |  5 12 15 12  5 |
---  159   |  4  9 12  9  4 |
---        |  2  4  5  4  2 |
---
--- Note that the upper left corner of the filter is applied to the
--- pixel that is off from the center by (-2, -2).
---
 task smooth(r_image    : region(ispace(int2d), Pixel),
             r_interior : region(ispace(int2d), Pixel))
 where
@@ -127,7 +114,6 @@ do
   c.printf("Gaussian smoothing took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
 end
 
---
 -- TODO: Copy and paste your 'sobelX', 'sobelY', and 'suppressNonmax' tasks here
 task sobelX(r_image    : region(ispace(int2d), Pixel),
             r_interior : region(ispace(int2d), Pixel))
@@ -136,15 +122,16 @@ where
 do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
-     var grad_x : double = 0
-     grad_x +=
+     -- var grad_x : double = 0
+     -- grad_x +=
+     r_interior[e].gradient.x =
 	-1. * r_image[e + {-1,-1}].smooth +
 	-2. * r_image[e + { 0,-1}].smooth +
 	-1. * r_image[e + { 1,-1}].smooth +
 	 1. * r_image[e + {-1, 1}].smooth +
 	 2. * r_image[e + { 0, 1}].smooth +
 	 1. * r_image[e + { 1, 1}].smooth
-     r_interior[e].gradient.x = grad_x
+     -- r_interior[e].gradient.x = grad_x
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Sobel operator on x-axis took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
@@ -157,15 +144,16 @@ where
 do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
-     var grad_y : double = 0
-     grad_y +=
+     -- var grad_y : double = 0
+     -- grad_y +=
+     r_interior[e].gradient.y =
 	-1. * r_image[e + {-1,-1}].smooth +
 	-2. * r_image[e + {-1, 0}].smooth +
 	-1. * r_image[e + {-1, 1}].smooth +
 	 1. * r_image[e + { 1,-1}].smooth +
 	 2. * r_image[e + { 1, 0}].smooth +
 	 1. * r_image[e + { 1, 1}].smooth
-     r_interior[e].gradient.y = grad_y
+     -- r_interior[e].gradient.y = grad_y
   end
   var ts_end = c.legion_get_current_time_in_micros()
   c.printf("Sobel operator on y-axis took %.3f sec.\n", (ts_end - ts_start) * 1e-6)
@@ -174,8 +162,8 @@ end
 task suppressNonmax(r_image    : region(ispace(int2d), Pixel),
                     r_interior : region(ispace(int2d), Pixel))
 where
-  reads(r_image.gradient),
-  writes(r_interior.local_maximum)
+  -- reads(r_image.gradient), writes(r_interior.local_maximum)
+  reads(r_image.gradient), writes(r_interior.local_maximum)
 do
   var ts_start = c.legion_get_current_time_in_micros()
   for e in r_interior do
@@ -186,26 +174,26 @@ do
      --
      if angle == 0 then
        -- Case 0
-       if r_image[e].gradient:norm() < r_image[e+{0, 1}].gradient:norm() or
-          r_image[e].gradient:norm() < r_image[e+{0,-1}].gradient:norm() then
+       if r_image[e].gradient:norm()<r_image[e+{0, 1}].gradient:norm() or
+          r_image[e].gradient:norm()<r_image[e+{0,-1}].gradient:norm() then
          e.local_maximum = false
        end
      elseif angle == 1 then
        -- Case 1
-       if r_image[e].gradient:norm() < r_image[e+{ 1, 1}].gradient:norm() or
-          r_image[e].gradient:norm() < r_image[e+{-1,-1}].gradient:norm() then
+       if r_image[e].gradient:norm()<r_image[e+{ 1, 1}].gradient:norm() or
+          r_image[e].gradient:norm()<r_image[e+{-1,-1}].gradient:norm() then
          e.local_maximum = false
        end
      elseif angle == 2 then
        -- Case 2
-       if r_image[e].gradient:norm() < r_image[e+{ 1,0}].gradient:norm() or
-          r_image[e].gradient:norm() < r_image[e+{-1,0}].gradient:norm() then
+       if r_image[e].gradient:norm()<r_image[e+{ 1,0}].gradient:norm() or
+          r_image[e].gradient:norm()<r_image[e+{-1,0}].gradient:norm() then
          e.local_maximum = false
        end
      elseif angle == 3 then
        -- Case 3
-       if r_image[e].gradient:norm() < r_image[e+{ 1,-1}].gradient:norm() or
-          r_image[e].gradient:norm() < r_image[e+{-1, 1}].gradient:norm() then
+       if r_image[e].gradient:norm()<r_image[e+{ 1,-1}].gradient:norm() or
+          r_image[e].gradient:norm()<r_image[e+{-1, 1}].gradient:norm() then
          e.local_maximum = false
        end
      end
@@ -293,8 +281,14 @@ task toplevel()
   --
   for color in p_private.colors do
     smooth(p_halo[color], p_private[color])
+  end
+
+  for color in p_private.colors do
     sobelX(p_halo[color], p_private[color])
     sobelY(p_halo[color], p_private[color])
+  end
+
+  for color in p_private.colors do
     suppressNonmax(p_halo[color], p_private[color])
    end
 
