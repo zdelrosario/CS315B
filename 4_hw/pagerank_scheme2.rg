@@ -17,9 +17,9 @@ fspace Page {
   n_out        : long;   -- number of outward links
 }
 
-fspace Link (p: region(Page)) {
+fspace Link (p: region(Page), q: region(Page)) {
   ptr_out : ptr(Page, p);
-  ptr_in  : ptr(Page, p);
+  ptr_in  : ptr(Page, q);
 }
 
 terra skip_header(f : &c.FILE)
@@ -32,7 +32,7 @@ terra read_ids(f : &c.FILE, page_ids : &uint32)
 end
 
 task initialize_graph(r_pages   : region(Page),
-                      r_links   : region(Link(r_pages)),
+                      r_links   : region(Link(r_pages,r_pages)),
                       damp      : double,
                       num_pages : uint64,
                       filename  : int8[512])
@@ -51,6 +51,9 @@ do
   for link in r_links do
     regentlib.assert(read_ids(f, page_ids), "Less data that it should be")
     var src_page = unsafe_cast(ptr(Page, r_pages), page_ids[0])
+    if isnull(dynamic_cast(ptr(Page, r_pages), src_page)) then
+      c.printf("%d\n", __raw(src_page))
+    end
     var dst_page = unsafe_cast(ptr(Page, r_pages), page_ids[1])
     link.ptr_out = src_page
     link.ptr_in  = dst_page
@@ -62,17 +65,20 @@ do
   c.printf("Graph initialization took %.4f sec\n", (ts_stop - ts_start) * 1e-6)
 end
 
---
--- TODO: Implement PageRank. You can use as many tasks as you want.
---
+-- PageRank tasks
 
-task pr_reduce(r_pages : region(Page),
-	       r_links : region(Link(r_pages)))
+task pr_reduce(r_pages_out : region(Page),
+	       r_pages_in  : region(Page),
+	       r_links     : region(Link(r_pages_out,r_pages_in)))
 where
-  reads(r_links, r_pages.n_out, r_pages.rank), reduces +(r_pages.sum)
+  reads(r_links, r_pages_out.{rank,n_out}), reduces +(r_pages_in.sum)
 do
   -- Iterate over all links, reduce to sum
+
   for link in r_links do
+    if isnull(dynamic_cast(ptr(Page, r_pages_out), link.ptr_out)) then
+      c.printf("%d\n", __raw(link.ptr_out))
+    end
     link.ptr_in.sum += link.ptr_out.rank / link.ptr_out.n_out
   end
 end
@@ -94,24 +100,6 @@ do
     -- Add to error
     err += c.fabs(prev-page.rank)
   end
-  return err
-end
-
-task pr_iter(r_pages : region(Page),
-	     r_links : region(Link(r_pages)),
-	     damp    : double,
-	     n_pages : long)
-where
-  reads(r_pages, r_links), writes(r_pages)
-do
-  -- accumulate error for convergence check
-  var err : double
-  err = 0
-  -- Iterate over links, accumulate the sums
-  pr_reduce(r_pages, r_links)
-  -- Iterate over nodes, compute new rank
-  err += pr_rank(r_pages, damp, n_pages)
-  -- Check error for convergence
   return err
 end
 
@@ -139,21 +127,23 @@ task toplevel()
   c.printf("* # Parallel Tasks : %11u *\n",   config.parallelism)
   c.printf("**********************************\n")
 
-  -- Create a regions of pages and links
+  -- Create regions of pages and links
   var r_pages = region(ispace(ptr, config.num_pages), Page)
-  var r_links = region(ispace(ptr, config.num_links), Link(wild))
+  var r_links = region(ispace(ptr, config.num_links), Link(wild,wild))
 
-  -- Allocate all the pages
-  new(ptr(Link(r_pages), r_links), config.num_links)
+  -- Allocate all the pages and links
+  new(ptr(Link(r_pages,r_pages), r_links), config.num_links)
   new(ptr(Page, r_pages), config.num_pages)
 
-  --
-  -- TODO: Create partitions for links and pages.
-  --       You can use as many partitions as you want.
-  --
-
+  -- Partition links and pages equally
+  var c_links = ispace(int1d, config.parallelism)
+  var p_links = partition(equal, r_links, c_links)
+  var p_pages = partition(equal, r_pages, c_links)
   -- Initialize the page graph from a file
   initialize_graph(r_pages, r_links, config.damp, config.num_pages, config.input)
+  -- Find source and dest. pages for each link partition
+  var p_links_out = preimage(r_links, p_pages, r_links.ptr_out)
+  var p_pages_in  = image(r_pages, p_links_out, r_links.ptr_in)
 
   var num_iterations = 0
   var converged = false
@@ -162,15 +152,25 @@ task toplevel()
 
   while not converged do
     num_iterations += 1
-    -- Perform iteration
-    err = pr_iter(r_pages, r_links, config.damp, config.num_pages)
-    -- Convergence check
+    -- Compute new sums
+    __demand(__parallel)
+    for i = 0, config.parallelism do
+      pr_reduce(p_pages[i],p_pages_in[i],p_links_out[i])
+    end
+    -- Compute new ranks
+    __demand(__parallel)
+    for i = 0, config.parallelism do
+      err += pr_rank(p_pages[i],config.damp, config.num_pages)
+    end
+    -- convergence check
     if err < config.error_bound then break end
     -- Iteration check
     if num_iterations >= config.max_iterations then
       c.printf("Maximum iterations reached!\n")
       break
     end
+    -- Reset loop
+    err = 0
   end
   var ts_stop = c.legion_get_current_time_in_micros()
   c.printf("PageRank converged after %d iterations in %.4f sec\n",

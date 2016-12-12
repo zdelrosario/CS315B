@@ -175,7 +175,7 @@ task toplevel()
   var num_iterations = 0
   var converged = false
   var ts_start = c.legion_get_current_time_in_micros()
-  var err : double
+  var err : double = 0
 
   while not converged do
     num_iterations += 1
