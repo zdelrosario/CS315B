@@ -1,0 +1,24 @@
+In my code, I have two tasks per iteration: pr_reduce() and pr_rank().
+The reduce code reduces to a running summation which will be added to
+a node's rank. The rank code takes the final summation and computes the
+new rank, and resets the summation. In both partitioning schemes,
+I run pr_reduce() over a different partition, but always run pr_rank()
+over an equal partitioning of the nodes. Thus we always have data
+dependency between the two sets of tasks. One could probably accelerate
+the process by finding disjoint subgraphs and running those (disjointly)
+in parallel.
+
+Scheme 1: Link partitioning
+
+The task pr_reduce() is run in parallel over equal partitionings of the links;
+the idea being to optimally balance the work done by each task. Since each
+pr_reduce() instance has no data dependency outside a reduction, each can run in
+parallel. I compute an image() of the link in and out pointers to get dependent
+partitions containing the relevant pages for each pr_reduce() instance.
+
+Scheme 2: Page partitioning
+
+The task pr_reduce() is run in parallel over equal partitionings of the pages;
+the relevant links are determined by preimage() and doled out to each task
+instance. This scheme also requires an image on said link partition, to
+determine the nodes to which each page is linked (for the reduction).
