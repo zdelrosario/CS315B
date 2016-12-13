@@ -22,3 +22,22 @@ The task pr_reduce() is run in parallel over equal partitionings of the pages;
 the relevant links are determined by preimage() and doled out to each task
 instance. This scheme also requires an image on said link partition, to
 determine the nodes to which each page is linked (for the reduction).
+
+Runtimes
+| CPU | Scheme 1 | Scheme 2 |
+| 1   | 580.7767 | 613.3464 |
+| 2   | 336.6682 | 454.1642 |
+| 4   | 184.8581 | 361.6351 |
+| 8   | 103.6656 | 247.8625 |
+| 16  |  62.9612 | NA       |
+| 32  |  48.5180 | NA       |
+
+Note: Once I reached 8 CPU's, I found that I started getting out of memory
+errors on one node. In order to alleviate this, I simply broke the problem up
+across multiple nodes using the total number of desired CPU's. It seems like I
+really shouldn't have to do this though -- there's probably a smarter way to
+restructure my partitioning such that making so many copies of the domain is not
+necessary!
+
+Unfortunately Scheme 2 was unable to scale past 8 CPU's, due to memory issues.
+It's really a bad strategy!
